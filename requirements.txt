@@ -1,3 +1,3 @@
 python-telegram-bot
-yt-dlp
+googletrans==3.1.0a0
 
