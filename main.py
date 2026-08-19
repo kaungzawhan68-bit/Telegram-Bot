@@ -10,7 +10,7 @@ from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, No
 # Telegram Bot Token ကို ဒီမှာ ထည့်ပါ
 TOKEN = "8811845324:AAGeX31hSOlJnccGWqglYaYNnYACm_y4ZxA" # သင့် Token အပြည့်အစုံ ပြန်ထည့်ပါ
 
-# Render အတွက် Web Server အသေးလေး (Port Error မတက်အောင်)
+# Render အတွက် Web Server အသေးလေး
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -44,7 +44,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("စာသားများကို ဆွဲယူနေပါသည်... ခဏစောင့်ပါ။ ⏳")
 
     try:
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'my', 'ja', 'ko'])
+        # Version အသစ်အတွက် ပြင်ထားသောနေရာ
+        ytt = YouTubeTranscriptApi()
+        transcript_list = ytt.fetch(video_id, languages=['en', 'my', 'ja', 'ko'])
         full_text = " ".join([item['text'] for item in transcript_list])
 
         if len(full_text) > 4000:
@@ -61,7 +63,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"အမှားတစ်ခု ဖြစ်ပေါ်ခဲ့သည်: {str(e)}")
 
 if __name__ == '__main__':
-    # Web server ကို နောက်ကွယ် (Thread) မှာ run ထားမည်
     Thread(target=run_health_check_server, daemon=True).start()
 
     app = ApplicationBuilder().token(TOKEN).build()
