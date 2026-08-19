@@ -4,12 +4,10 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from threading import Thread
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 
 # Telegram Bot Token ကို ဒီမှာ ထည့်ပါ
 TOKEN = "8811845324:AAGeX31hSOlJnccGWqglYaYNnYACm_y4ZxA" # သင့် Token အပြည့်အစုံ ပြန်ထည့်ပါ
-
-translator = Translator()
 
 # Render အတွက် Web Server (Port Error မတက်အောင်)
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -37,13 +35,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("ဘာသာပြန်ပေးနေပါသည်... ⏳")
 
     try:
-        # Google Translate ကို သုံးပြီး မြန်မာလို ဘာသာပြန်ခြင်း
+        # deep-translator သုံး၍ မြန်မာလို ဘာသာပြန်ခြင်း
         loop = asyncio.get_event_loop()
-        translated = await loop.run_in_executor(
-            None, lambda: translator.translate(text, dest='my')
+        translated_text = await loop.run_in_executor(
+            None, lambda: GoogleTranslator(source='auto', target='my').translate(text)
         )
 
-        await update.message.reply_text(translated.text)
+        await update.message.reply_text(translated_text)
 
     except Exception as e:
         await update.message.reply_text(f"ဘာသာပြန်ရာတွင် အမှားတစ်ခု ဖြစ်ပေါ်ခဲ့သည်: {str(e)}")
