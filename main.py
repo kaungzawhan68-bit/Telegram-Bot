@@ -1,24 +1,38 @@
+import os
 import re
+import asyncio
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from threading import Thread
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
 
 # Telegram Bot Token ကို ဒီမှာ ထည့်ပါ
-TOKEN = "8811845324:AAGeX31hSOlJnccGWqglYaYNnYACm_y4ZxA"
+TOKEN = "8811845324:AAGeX31hSOlJnccGWqglYaYNnYACm_y4ZxA" # သင့် Token အပြည့်အစုံ ပြန်ထည့်ပါ
 
-# YouTube URL မှ Video ID ကို ထုတ်ယူပေးသည့် Function
+# Render အတွက် Web Server အသေးလေး (Port Error မတက်အောင်)
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running alive!")
+
+def run_health_check_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    server.serve_forever()
+
+# YouTube URL မှ Video ID ထုတ်ယူခြင်း
 def extract_video_id(url):
     pattern = r"(?:v=|\/|be\/|embed\/)([a-zA-Z0-9_-]{11})"
     match = re.search(pattern, url)
     return match.group(1) if match else None
 
-# /start command ပို့ပါက တုံ့ပြန်ရန်
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "မင်္ဂလာပါ! YouTube ဗီဒီယို Link ကို ပို့ပေးပါ။ စကားပြော စာသားများ (Transcript) ထုတ်ပေးပါမည်။"
     )
 
-# Link ရောက်လာပါက Transcript ထုတ်ပေးရန်
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     video_id = extract_video_id(text)
@@ -30,13 +44,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("စာသားများကို ဆွဲယူနေပါသည်... ခဏစောင့်ပါ။ ⏳")
 
     try:
-        # Transcript ရယူခြင်း (အင်္ဂလိပ် သို့မဟုတ် အခြားရရှိနိုင်သော ဘာသာစကား)
         transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'my', 'ja', 'ko'])
-        
-        # စာသားများကို သီးသန့် စုစည်းခြင်း
         full_text = " ".join([item['text'] for item in transcript_list])
 
-        # Telegram ၏ စာလုံးရေ အကန့်အသတ် (4096) ထက်ကျော်ပါက ပိုင်းပြီးပို့ပေးခြင်း
         if len(full_text) > 4000:
             for i in range(0, len(full_text), 4000):
                 await update.message.reply_text(full_text[i:i+4000])
@@ -51,8 +61,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"အမှားတစ်ခု ဖြစ်ပေါ်ခဲ့သည်: {str(e)}")
 
 if __name__ == '__main__':
-    app = ApplicationBuilder().token(TOKEN).build()
+    # Web server ကို နောက်ကွယ် (Thread) မှာ run ထားမည်
+    Thread(target=run_health_check_server, daemon=True).start()
 
+    app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
