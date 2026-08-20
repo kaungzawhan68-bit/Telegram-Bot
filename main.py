@@ -1,57 +1,62 @@
-import os
-import asyncio
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from threading import Thread
+import logging
+import urllib.parse
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from deep_translator import GoogleTranslator
+from google import genai
 
-# Telegram Bot Token ကို ဒီမှာ ထည့်ပါ
-TOKEN = "8811845324:AAGeX31hSOlJnccGWqglYaYNnYACm_y4ZxA" # သင့် Token အပြည့်အစုံ ပြန်ထည့်ပါ
+# Telegram Token နဲ့ ပုံထဲက Gemini API Key
+TELEGRAM_BOT_TOKEN = "8970292140:AAG7vL6attDLED3kUKgXeAmO-bRF63PIwcg"
+GEMINI_API_KEY = "AQ.Ab8RN6IcbF3CGnk-LPXyl0yrQNV7BD0eVLni_N9zKVhkOVBEtg"
 
-# Render အတွက် Web Server (Port Error မတက်အောင်)
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Translation Bot is running alive!")
+# Gemini Client initialize လုပ်ခြင်း
+client = genai.Client(api_key=GEMINI_API_KEY)
 
-def run_health_check_server():
-    port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    server.serve_forever()
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "မင်္ဂလာပါ! ဘာသာပြန်ချင်တဲ့ စာသား (သို့မဟုတ် အင်္ဂလိပ်စာ) ကို ပို့ပေးပါ။ မြန်မာလို အလိုအလျောက် ဘာသာပြန်ပေးပါမည်။ 🇲🇲"
+    welcome_text = (
+        "မင်္ဂလာပါ! Gemini AI Bot မှ ကြိုဆိုပါတယ်။\n\n"
+        "• စာမေးရန်: တိုက်ရိုက် စာရေးပြီး ပို့ပါ။\n"
+        "• ပုံထုတ်ရန်: `/draw <ပုံဖော်ပြချက်>` ဟု ရေးပါ။"
     )
+    await update.message.reply_text(welcome_text)
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-
-    if not text:
-        return
-
-    await update.message.reply_text("ဘာသာပြန်ပေးနေပါသည်... ⏳")
+# Gemini 1.5 Flash ဖြင့် စာကြောင်းများ ဖြေကြားပေးခြင်း
+async def chat_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_message = update.message.text
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
 
     try:
-        # deep-translator သုံး၍ မြန်မာလို ဘာသာပြန်ခြင်း
-        loop = asyncio.get_event_loop()
-        translated_text = await loop.run_in_executor(
-            None, lambda: GoogleTranslator(source='auto', target='my').translate(text)
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=user_message,
         )
-
-        await update.message.reply_text(translated_text)
-
+        await update.message.reply_text(response.text)
     except Exception as e:
-        await update.message.reply_text(f"ဘာသာပြန်ရာတွင် အမှားတစ်ခု ဖြစ်ပေါ်ခဲ့သည်: {str(e)}")
+        await update.message.reply_text("တောင်းပန်ပါတယ်၊ Gemini API ချိတ်ဆက်မှု အမှားတစ်ခု ရှိနေပါသည်။")
+
+# Pollinations.ai ဖြင့် အခမဲ့ ပုံထုတ်ပေးခြင်း
+async def draw_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("ကျေးဇူးပြု၍ ပုံထုတ်ရန် စာသားထည့်ပါ။\nဥပမာ - `/draw a cyber cat`")
+        return
+
+    prompt = " ".join(context.args)
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="upload_photo")
+
+    try:
+        encoded_prompt = urllib.parse.quote(prompt)
+        image_url = f"https://pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed=42&model=flux"
+        await update.message.reply_photo(photo=image_url, caption=f"Prompt: {prompt}")
+    except Exception as e:
+        await update.message.reply_text("ပုံထုတ်ရာတွင် အမှားတစ်ခု ရှိသွားပါသည်။")
 
 if __name__ == '__main__':
-    Thread(target=run_health_check_server, daemon=True).start()
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-    app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CommandHandler("draw", draw_image))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), chat_ai))
 
-    print("Translate Bot is running...")
+    print("Bot is successfully running...")
     app.run_polling()
